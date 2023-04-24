@@ -4,13 +4,16 @@ import (
 	"context"
 	"fmt"
 	"runtime/debug"
+	"strings"
 
 	"github.com/rs/zerolog"
 	"golang.org/x/exp/slog"
 )
 
 type Handler struct {
-	logger zerolog.Logger
+	logger    zerolog.Logger
+	group     *zerolog.Event
+	groupName string
 }
 
 func NewHandler(logger zerolog.Logger) *Handler {
@@ -29,32 +32,29 @@ func (h *Handler) Handle(ctx context.Context, record slog.Record) error {
 		return err
 	}
 
+	// Map slog level to the zerolog level
 	lvl := mapSlogLevelToZerolog(record.Level)
-	var event *zerolog.Event
-	switch lvl {
-	case zerolog.TraceLevel:
-		event = h.logger.Trace()
-	case zerolog.DebugLevel:
-		event = h.logger.Debug()
-	case zerolog.InfoLevel:
-		event = h.logger.Info()
-	case zerolog.WarnLevel:
-		event = h.logger.Warn()
-	case zerolog.ErrorLevel:
-		event = h.logger.Error().Str("stacktrace", string(debug.Stack()))
-	case zerolog.PanicLevel:
-		event = h.logger.Panic().Str("stacktrace", string(debug.Stack()))
-	case zerolog.FatalLevel:
-		event = h.logger.Fatal().Str("stacktrace", string(debug.Stack()))
-	default:
-		event = h.logger.Log()
+
+	// Create an event for the zerolog mapped level from the slog level. If the
+	// level is ERROR, PANIC, or FATAL append the stacktrace to the event.
+	event := h.logger.WithLevel(lvl)
+	if lvl == zerolog.ErrorLevel || lvl == zerolog.PanicLevel || lvl == zerolog.FatalLevel {
+		event.Str("stacktrace", string(debug.Stack()))
 	}
 
-	record.Attrs(func(attr slog.Attr) {
-		event = appendAttr(event, attr)
-	})
-
-	event.Msg(record.Message)
+	if h.group != nil {
+		dict := zerolog.Dict()
+		record.Attrs(func(attr slog.Attr) {
+			appendAttr(dict, attr)
+		})
+		event.Dict(h.groupName, dict)
+		event.Msg(record.Message)
+	} else {
+		record.Attrs(func(attr slog.Attr) {
+			event = appendAttr(event, attr)
+		})
+		event.Msg(record.Message)
+	}
 	return nil
 }
 
@@ -69,8 +69,21 @@ func (h *Handler) WithAttrs(attrs []slog.Attr) slog.Handler {
 }
 
 func (h *Handler) WithGroup(name string) slog.Handler {
-	// TODO implement me
-	panic("implement me")
+	if strings.TrimSpace(name) == "" {
+		return h
+	}
+	if h.group == nil {
+		return &Handler{
+			logger:    h.logger,
+			group:     zerolog.Dict(),
+			groupName: name,
+		}
+	}
+	return &Handler{
+		logger:    h.logger,
+		group:     h.group.Dict(h.groupName, h.group),
+		groupName: name,
+	}
 }
 
 func appendAttr(evt *zerolog.Event, attr slog.Attr) *zerolog.Event {

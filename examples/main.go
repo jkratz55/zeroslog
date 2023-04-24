@@ -2,10 +2,8 @@ package main
 
 import (
 	"os"
-	"runtime/debug"
 
 	"github.com/rs/zerolog"
-	"github.com/rs/zerolog/pkgerrors"
 	"golang.org/x/exp/slog"
 
 	"github.com/jkratz55/zeroslog"
@@ -15,9 +13,15 @@ func main() {
 
 	slogger := slog.New(slog.NewJSONHandler(os.Stderr))
 	slogger.Info("Hello")
+	slogger.WithGroup("groupy").Info("Hello",
+		slog.String("firstName", "Sir Elton"))
 
-	zerolog.ErrorStackFieldName = "stack"
-	zerolog.ErrorStackMarshaler = pkgerrors.MarshalStack
+	slogger.WithGroup("group1").
+		WithGroup("group2").
+		WithGroup("group3").
+		Info("Hello World",
+			slog.String("firstName", "Sir Elton"))
+
 	zLogger := zerolog.New(os.Stderr).
 		With().
 		Timestamp().
@@ -31,21 +35,15 @@ func main() {
 		slog.String("userId", "jkratz"),
 		slog.Group("http",
 			slog.String("method", "GET"),
-			slog.String("browser", "CHROME")))
-}
+			slog.String("browser", "CHROME"),
+			slog.Group("sub",
+				slog.String("name", "POWER"))))
 
-func something() {
-	something2()
-}
+	zeroSlogger.WithGroup("groupy").Info("Hello",
+		slog.String("firstName", "Sir Elton"))
 
-func something2() {
-	something3()
-}
-
-func something3() {
-	something4()
-}
-
-func something4() {
-	os.Stderr.Write(debug.Stack())
+	zeroSlogger.WithGroup("groupy").
+		WithGroup("group2").
+		Info("Hello",
+			slog.String("firstName", "Sir Elton"))
 }
